@@ -1,0 +1,9 @@
+#!/bin/sh
+manifest="extension/manifest.json"
+version=$(grep -o '"version": "[^"]*"' "$manifest" | grep -o '[0-9.]*')
+major=$(echo "$version" | cut -d. -f1)
+minor=$(echo "$version" | cut -d. -f2)
+patch=$(echo "$version" | cut -d. -f3)
+new="$major.$minor.$((patch + 1))"
+sed -i "s/\"version\": \"$version\"/\"version\": \"$new\"/" "$manifest"
+git add "$manifest"
