@@ -1,0 +1,11 @@
+[package]
+name = "browser-ext-host"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "browser-ext-host"
+path = "src/main.rs"
+
+[dependencies]
+serde_json = "1"
