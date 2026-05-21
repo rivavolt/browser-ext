@@ -109,6 +109,12 @@ const HANDLERS = {
     return { id: tabId, text: result ?? '' };
   },
 
+  'tabs.close': async ({ ids }) => {
+    const tabIds = (Array.isArray(ids) ? ids : [ids]).map(requireTabId);
+    await chrome.tabs.remove(tabIds);
+    return { closed: tabIds };
+  },
+
   'windows.list': async () => {
     const windows = await chrome.windows.getAll({ populate: true });
     return windows.map((w) => ({
