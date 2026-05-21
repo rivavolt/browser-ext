@@ -145,6 +145,43 @@ const HANDLERS = {
     return { id: tab.id, windowId: tab.windowId };
   },
 
+  'tabs.move': async ({ id, index, windowId }) => {
+    const tabId = requireTabId(id);
+    const moveProps = {};
+    if (index !== undefined && index !== null) {
+      const n = Number(index);
+      if (!Number.isInteger(n)) {
+        throw new Error(`invalid index: ${index}`);
+      }
+      moveProps.index = n;
+    }
+    if (windowId !== undefined && windowId !== null) {
+      const w = Number(windowId);
+      if (!Number.isInteger(w)) {
+        throw new Error(`invalid window id: ${windowId}`);
+      }
+      moveProps.windowId = w;
+    }
+    if (moveProps.index === undefined) {
+      throw new Error('move needs an index');
+    }
+    const moved = await chrome.tabs.move(tabId, moveProps);
+    const tab = Array.isArray(moved) ? moved[0] : moved;
+    return { id: tab.id, windowId: tab.windowId, index: tab.index };
+  },
+
+  'tabs.screenshot': async ({ id }) => {
+    const tabId = requireTabId(id);
+    // captureVisibleTab only captures a window's active tab, so make this
+    // tab active and focus its window before capturing.
+    const tab = await chrome.tabs.update(tabId, { active: true });
+    await chrome.windows.update(tab.windowId, { focused: true });
+    const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, {
+      format: 'png',
+    });
+    return { id: tab.id, windowId: tab.windowId, dataUrl };
+  },
+
   'tabs.eval': async ({ id, code }) => {
     const tabId = requireTabId(id);
     if (typeof code !== 'string' || code === '') {

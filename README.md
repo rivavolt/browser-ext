@@ -10,6 +10,10 @@ browser tabs open [url]            open a new tab, optionally at a url
 browser tabs navigate <id> <url>   navigate a tab to a url
 browser tabs activate <id>         focus a tab and its window
 browser tabs eval <id> <js>        run JS in a tab, result as JSON
+browser tabs move <id> --index <n> [--window <id>]
+                                   reorder a tab, or move it to another window
+browser tabs screenshot <id> [--out <path>]
+                                   capture a tab as a PNG (stdout by default)
 browser tabs close <id>...         close one or more tabs by id
 browser windows list               list all windows     -> JSON array
 browser --plain tabs list          line-oriented output for shells
