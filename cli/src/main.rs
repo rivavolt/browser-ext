@@ -23,6 +23,7 @@ usage:
 groups & verbs:
   tabs list                 list all tabs
   tabs content <id>         readable text of a tab
+  tabs close <id>...        close one or more tabs by id
   windows list              list all windows
 
 options:
@@ -142,6 +143,27 @@ fn main() {
             let result = request(&browser, "tabs.content", json!({ "id": tab_id }));
             if plain {
                 println!("{}", result["text"].as_str().unwrap_or(""));
+            } else {
+                print_json(&result);
+            }
+        }
+
+        ("tabs", "close") => {
+            if args.is_empty() {
+                die("tabs close needs at least one tab id");
+            }
+            let ids: Vec<i64> = args
+                .iter()
+                .map(|id| {
+                    id.parse()
+                        .unwrap_or_else(|_| die(format!("invalid tab id: {id}")))
+                })
+                .collect();
+            let result = request(&browser, "tabs.close", json!({ "ids": ids }));
+            if plain {
+                for id in result["closed"].as_array().map(Vec::as_slice).unwrap_or(&[]) {
+                    println!("{id}");
+                }
             } else {
                 print_json(&result);
             }
