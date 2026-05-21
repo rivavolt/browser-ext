@@ -9,6 +9,7 @@
 
 use serde_json::{json, Value};
 use std::env;
+use std::fs;
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
@@ -27,6 +28,10 @@ groups & verbs:
   tabs navigate <id> <url>  navigate a tab to a url
   tabs activate <id>        focus a tab and its window
   tabs eval <id> <js>       run JS in a tab, print the result as JSON
+  tabs move <id> --index <n> [--window <id>]
+                            reorder a tab, or move it to another window
+  tabs screenshot <id> [--out <path>]
+                            capture a tab as a PNG (stdout by default)
   tabs close <id>...        close one or more tabs by id
   windows list              list all windows
 
@@ -84,6 +89,45 @@ fn request(browser: &str, method: &str, params: Value) -> Value {
 
 fn print_json(v: &Value) {
     println!("{}", serde_json::to_string_pretty(v).unwrap());
+}
+
+/// Decode standard base64 (with optional `=` padding) into raw bytes.
+fn base64_decode(s: &str) -> Result<Vec<u8>, String> {
+    fn val(c: u8) -> Option<u32> {
+        match c {
+            b'A'..=b'Z' => Some((c - b'A') as u32),
+            b'a'..=b'z' => Some((c - b'a' + 26) as u32),
+            b'0'..=b'9' => Some((c - b'0' + 52) as u32),
+            b'+' => Some(62),
+            b'/' => Some(63),
+            _ => None,
+        }
+    }
+    let mut out = Vec::with_capacity(s.len() / 4 * 3);
+    let mut acc = 0u32;
+    let mut bits = 0u32;
+    for &c in s.as_bytes() {
+        if c == b'=' || c.is_ascii_whitespace() {
+            continue;
+        }
+        let v = val(c).ok_or_else(|| format!("invalid base64 byte: {c}"))?;
+        acc = (acc << 6) | v;
+        bits += 6;
+        if bits >= 8 {
+            bits -= 8;
+            out.push((acc >> bits) as u8);
+        }
+    }
+    Ok(out)
+}
+
+/// Pull the raw bytes out of a `data:...;base64,<payload>` URL.
+fn data_url_bytes(data_url: &str) -> Result<Vec<u8>, String> {
+    let payload = data_url
+        .split_once(";base64,")
+        .map(|(_, p)| p)
+        .ok_or("host returned a non-base64 data URL")?;
+    base64_decode(payload)
 }
 
 fn main() {
@@ -215,6 +259,94 @@ fn main() {
                 }
             } else {
                 print_json(&result);
+            }
+        }
+
+        ("tabs", "move") => {
+            let id = args
+                .first()
+                .unwrap_or_else(|| die("tabs move needs a tab id and --index"));
+            let tab_id: i64 = id
+                .parse()
+                .unwrap_or_else(|_| die(format!("invalid tab id: {id}")));
+            let mut index: Option<i64> = None;
+            let mut window: Option<i64> = None;
+            let mut it = args[1..].iter();
+            while let Some(flag) = it.next() {
+                match flag.as_str() {
+                    "--index" => {
+                        let v = it.next().unwrap_or_else(|| die("--index needs a value"));
+                        index = Some(
+                            v.parse()
+                                .unwrap_or_else(|_| die(format!("invalid index: {v}"))),
+                        );
+                    }
+                    "--window" => {
+                        let v = it.next().unwrap_or_else(|| die("--window needs a value"));
+                        window = Some(
+                            v.parse()
+                                .unwrap_or_else(|_| die(format!("invalid window id: {v}"))),
+                        );
+                    }
+                    other => die(format!("unknown option for tabs move: {other}")),
+                }
+            }
+            let index = index.unwrap_or_else(|| die("tabs move needs --index"));
+            let result = request(
+                &browser,
+                "tabs.move",
+                json!({ "id": tab_id, "index": index, "windowId": window }),
+            );
+            if plain {
+                println!("{}\t{}", result["windowId"], result["index"]);
+            } else {
+                print_json(&result);
+            }
+        }
+
+        ("tabs", "screenshot") => {
+            let id = args
+                .first()
+                .unwrap_or_else(|| die("tabs screenshot needs a tab id"));
+            let tab_id: i64 = id
+                .parse()
+                .unwrap_or_else(|_| die(format!("invalid tab id: {id}")));
+            let mut out: Option<String> = None;
+            let mut it = args[1..].iter();
+            while let Some(flag) = it.next() {
+                match flag.as_str() {
+                    "--out" => {
+                        out = Some(
+                            it.next()
+                                .unwrap_or_else(|| die("--out needs a value"))
+                                .clone(),
+                        );
+                    }
+                    other => die(format!("unknown option for tabs screenshot: {other}")),
+                }
+            }
+            let result = request(&browser, "tabs.screenshot", json!({ "id": tab_id }));
+            let data_url = result["dataUrl"]
+                .as_str()
+                .unwrap_or_else(|| die("host returned no screenshot data"));
+            let png = data_url_bytes(data_url).unwrap_or_else(|e| die(e));
+            match out {
+                Some(path) => {
+                    fs::write(&path, &png)
+                        .unwrap_or_else(|e| die(format!("cannot write {path}: {e}")));
+                    if !plain {
+                        print_json(&json!({
+                            "id": tab_id,
+                            "path": path,
+                            "bytes": png.len(),
+                        }));
+                    }
+                }
+                None => {
+                    std::io::stdout()
+                        .write_all(&png)
+                        .unwrap_or_else(|e| die(format!("write failed: {e}")));
+                }
             }
         }
 
