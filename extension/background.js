@@ -84,8 +84,9 @@ async function handleRequest(msg) {
 
 // --- Handlers ---
 //
-// Keep each handler small and self-contained so new verbs (eval, activate,
-// close, open, navigate, reload, screenshot) drop in as extra entries.
+// Keep each handler small and self-contained so new verbs drop in as extra
+// entries. Each wraps a chrome.tabs.* / chrome.windows.* / chrome.scripting.*
+// call and returns a JSON-serializable result.
 
 const HANDLERS = {
   'tabs.list': async () => {
@@ -115,6 +116,52 @@ const HANDLERS = {
     return { closed: tabIds };
   },
 
+  'tabs.open': async ({ url }) => {
+    const tab = await chrome.tabs.create(url ? { url } : {});
+    return {
+      id: tab.id,
+      windowId: tab.windowId,
+      url: tab.url ?? tab.pendingUrl ?? '',
+    };
+  },
+
+  'tabs.navigate': async ({ id, url }) => {
+    const tabId = requireTabId(id);
+    if (typeof url !== 'string' || url === '') {
+      throw new Error('navigate needs a url');
+    }
+    const tab = await chrome.tabs.update(tabId, { url });
+    return {
+      id: tab.id,
+      windowId: tab.windowId,
+      url: tab.url ?? tab.pendingUrl ?? '',
+    };
+  },
+
+  'tabs.activate': async ({ id }) => {
+    const tabId = requireTabId(id);
+    const tab = await chrome.tabs.update(tabId, { active: true });
+    await chrome.windows.update(tab.windowId, { focused: true });
+    return { id: tab.id, windowId: tab.windowId };
+  },
+
+  'tabs.eval': async ({ id, code }) => {
+    const tabId = requireTabId(id);
+    if (typeof code !== 'string' || code === '') {
+      throw new Error('eval needs code to run');
+    }
+    const [injection = {}] = await chrome.scripting.executeScript({
+      target: { tabId },
+      world: 'MAIN',
+      args: [code],
+      func: evalInPage,
+    });
+    if (injection.error) {
+      throw new Error(injection.error);
+    }
+    return { id: tabId, result: injection.result ?? null };
+  },
+
   'windows.list': async () => {
     const windows = await chrome.windows.getAll({ populate: true });
     return windows.map((w) => ({
@@ -140,6 +187,23 @@ function extractReadableText() {
   if (!root) return '';
   const text = root.innerText || root.textContent || '';
   return text.replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+// Runs in the page's main world. Evaluates `code` as an expression (falling
+// back to statement execution) and returns it wrapped so the caller can tell
+// a thrown error from a value; the result must survive structured cloning.
+function evalInPage(code) {
+  try {
+    let value;
+    try {
+      value = (0, eval)(`(${code})`);
+    } catch (_) {
+      value = (0, eval)(code);
+    }
+    return { result: value === undefined ? null : value };
+  } catch (e) {
+    return { error: e?.message || String(e) };
+  }
 }
 
 // --- Init ---

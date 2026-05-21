@@ -6,6 +6,10 @@ AI-agent use. JSON output by default.
 ```
 browser tabs list                 list all tabs        -> JSON array
 browser tabs content <id>          readable text of a tab
+browser tabs open [url]            open a new tab, optionally at a url
+browser tabs navigate <id> <url>   navigate a tab to a url
+browser tabs activate <id>         focus a tab and its window
+browser tabs eval <id> <js>        run JS in a tab, result as JSON
 browser tabs close <id>...         close one or more tabs by id
 browser windows list               list all windows     -> JSON array
 browser --plain tabs list          line-oriented output for shells
@@ -42,8 +46,7 @@ Extension -> host -> CLI: `{ "id": N, "result": ... }` or `{ "id": N, "error": "
 2. Add a `(group, verb)` arm to the `match` in `cli/src/main.rs`.
 
 Both layers just dispatch on a method string, so no protocol changes are
-needed. Planned verbs: `tabs eval`, `activate`, `open`, `navigate`,
-`reload`, `screenshot`.
+needed.
 
 ## Build
 
