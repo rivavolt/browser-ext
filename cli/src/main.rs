@@ -23,6 +23,10 @@ usage:
 groups & verbs:
   tabs list                 list all tabs
   tabs content <id>         readable text of a tab
+  tabs open [url]           open a new tab, optionally at a url
+  tabs navigate <id> <url>  navigate a tab to a url
+  tabs activate <id>        focus a tab and its window
+  tabs eval <id> <js>       run JS in a tab, print the result as JSON
   tabs close <id>...        close one or more tabs by id
   windows list              list all windows
 
@@ -143,6 +147,72 @@ fn main() {
             let result = request(&browser, "tabs.content", json!({ "id": tab_id }));
             if plain {
                 println!("{}", result["text"].as_str().unwrap_or(""));
+            } else {
+                print_json(&result);
+            }
+        }
+
+        ("tabs", "open") => {
+            let url = args.first().map(String::as_str);
+            let result = request(&browser, "tabs.open", json!({ "url": url }));
+            if plain {
+                println!("{}", result["id"]);
+            } else {
+                print_json(&result);
+            }
+        }
+
+        ("tabs", "navigate") => {
+            let id = args
+                .first()
+                .unwrap_or_else(|| die("tabs navigate needs a tab id and a url"));
+            let tab_id: i64 = id
+                .parse()
+                .unwrap_or_else(|_| die(format!("invalid tab id: {id}")));
+            let url = args
+                .get(1)
+                .unwrap_or_else(|| die("tabs navigate needs a url"));
+            let result =
+                request(&browser, "tabs.navigate", json!({ "id": tab_id, "url": url }));
+            if plain {
+                println!("{}", result["id"]);
+            } else {
+                print_json(&result);
+            }
+        }
+
+        ("tabs", "activate") => {
+            let id = args
+                .first()
+                .unwrap_or_else(|| die("tabs activate needs a tab id"));
+            let tab_id: i64 = id
+                .parse()
+                .unwrap_or_else(|_| die(format!("invalid tab id: {id}")));
+            let result = request(&browser, "tabs.activate", json!({ "id": tab_id }));
+            if plain {
+                println!("{}", result["id"]);
+            } else {
+                print_json(&result);
+            }
+        }
+
+        ("tabs", "eval") => {
+            let id = args
+                .first()
+                .unwrap_or_else(|| die("tabs eval needs a tab id and JS to run"));
+            let tab_id: i64 = id
+                .parse()
+                .unwrap_or_else(|_| die(format!("invalid tab id: {id}")));
+            let code = args
+                .get(1)
+                .unwrap_or_else(|| die("tabs eval needs JS to run"));
+            let result =
+                request(&browser, "tabs.eval", json!({ "id": tab_id, "code": code }));
+            if plain {
+                match &result["result"] {
+                    Value::String(s) => println!("{s}"),
+                    other => println!("{other}"),
+                }
             } else {
                 print_json(&result);
             }
